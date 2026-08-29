@@ -18,6 +18,7 @@ fn setup() -> (Env, Address, Address, VirtualTokenContractClient<'static>) {
     let admin = Address::generate(&env);
     let oracle = Address::generate(&env);
     client.initialize(&admin, &oracle);
+    client.update_oracle_heartbeat(&0u32);
     (env, admin, contract_id, client)
 }
 
@@ -254,6 +255,7 @@ fn test_reclaim_requires_admin_auth() {
     // Auth for initialize only
     env.mock_all_auths();
     client.initialize(&admin, &oracle);
+    client.update_oracle_heartbeat(&0u32);
 
     // Set expiry via admin
     apply_pending_winnings_expiry(&env, &client, 128);

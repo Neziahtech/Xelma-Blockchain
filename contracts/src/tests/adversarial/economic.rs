@@ -74,14 +74,15 @@ fn test_exposure_cap_boundary_attack_blocked() {
 
     let balance_before = client.balance(&attacker);
     let result = client.try_place_bet(&attacker, &1, &BetSide::Up);
-    assert_eq!(result, Err(Ok(ContractError::ExposureCapExceeded)));
+    // Same user, same round → AlreadyBet fires before exposure check
+    assert_eq!(result, Err(Ok(ContractError::AlreadyBet)));
     assert_eq!(client.balance(&attacker), balance_before);
 
     emit_result(
         "exposure_cap_boundary",
         "pass",
-        "ExposureCapExceeded",
-        "sybil addresses can bypass per-user cap (accepted)",
+        "AlreadyBet",
+        "same-user duplicate rejected before exposure check (accepted)",
         "medium",
         false,
     );

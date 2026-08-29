@@ -547,6 +547,18 @@ pub fn commit_prediction(
         return Err(ContractError::InsufficientBalance);
     }
 
+    // Enforce precision participant cap (must be checked before appending)
+    let participants_key = DataKeyScoped::RoundParticipants(round.round_id);
+    let current_participants: Vec<Address> = env
+        .storage()
+        .persistent()
+        .get(&participants_key)
+        .unwrap_or(Vec::new(&env));
+    let max_precision_participants = get_max_precision_participants(env.clone());
+    if current_participants.len() >= max_precision_participants {
+        return Err(ContractError::PrecisionCapExceeded);
+    }
+
     // Check duplicate bet or commitment
     let pred_key = DataKeyScoped::PrecisionPosition(round.round_id, user.clone());
     let commit_key = DataKeyScoped::PrecisionCommitment(round.round_id, user.clone());
