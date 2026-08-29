@@ -67,6 +67,7 @@ extern crate std;
 use std::env;
 use std::format;
 use std::string::{String, ToString};
+use std::vec;
 use std::vec::Vec;
 
 use rand::rngs::StdRng;
@@ -78,10 +79,9 @@ use rand::{Rng, SeedableRng};
 
 use crate::settlement_math::{
     classify_price_direction, compute_deviation_bps, compute_precision_fee,
-    compute_precision_payouts_with_policy, compute_updown_fee,
-    compute_updown_payouts, find_precision_winners_with_policy,
-    PrecisionEntry, PrecisionPayoutPolicy, PrecisionScoringMode,
-    PrecisionScoringPolicy, PriceDirection, UpDownPosition,
+    compute_precision_payouts_with_policy, compute_updown_fee, compute_updown_payouts,
+    find_precision_winners_with_policy, PrecisionEntry, PrecisionPayoutPolicy,
+    PrecisionScoringMode, PrecisionScoringPolicy, PriceDirection, UpDownPosition,
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -129,7 +129,11 @@ fn ref_compute_updown_fee(
             }
             let fee_from_losing = fee.min(losing_pool);
             let fee_from_winning = fee - fee_from_losing;
-            (winning_pool - fee_from_winning, losing_pool - fee_from_losing, fee)
+            (
+                winning_pool - fee_from_winning,
+                losing_pool - fee_from_losing,
+                fee,
+            )
         }
     }
 }
@@ -169,10 +173,7 @@ fn ref_updown_payouts(
     let one_sided = ref_is_one_sided(pool_up, pool_down);
 
     if direction == PriceDirection::Unchanged || one_sided {
-        return positions
-            .iter()
-            .map(|p| (p.amount, false, true))
-            .collect();
+        return positions.iter().map(|p| (p.amount, false, true)).collect();
     }
 
     let (winning_side_up, winning_pool, losing_pool) = match direction {
@@ -182,10 +183,7 @@ fn ref_updown_payouts(
     };
 
     if winning_pool == 0 {
-        return positions
-            .iter()
-            .map(|p| (p.amount, false, true))
-            .collect();
+        return positions.iter().map(|p| (p.amount, false, true)).collect();
     }
 
     let (dw, dl, _) = ref_compute_updown_fee(winning_pool, losing_pool, fee_bps);
@@ -316,10 +314,7 @@ fn ref_precision_payouts(
         ref_find_precision_winners(entries, final_price, scoring_policy);
 
     if winner_indices.is_empty() && total_pot > 0 {
-        return entries
-            .iter()
-            .map(|e| (e.amount, false, true))
-            .collect();
+        return entries.iter().map(|e| (e.amount, false, true)).collect();
     }
     if total_pot <= 0 || winner_indices.is_empty() {
         return entries.iter().map(|_| (0i128, false, false)).collect();
@@ -330,7 +325,10 @@ fn ref_precision_payouts(
     let winner_payouts = match payout_policy {
         PrecisionPayoutPolicy::Equal => ref_split_equal(distributable, winner_indices.len()),
         PrecisionPayoutPolicy::StakeWeighted => {
-            let ws: Vec<i128> = winner_indices.iter().map(|&idx| entries[idx].amount).collect();
+            let ws: Vec<i128> = winner_indices
+                .iter()
+                .map(|&idx| entries[idx].amount)
+                .collect();
             ref_split_stake_weighted(distributable, &ws)
         }
     };
@@ -384,7 +382,10 @@ fn generate_cases(base_seed: u64, count: u32) -> Vec<OracleCase> {
     let mut cases = Vec::with_capacity(count as usize);
 
     for i in 0..count {
-        let case_seed = base_seed.wrapping_add(i as u64).wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        let case_seed = base_seed
+            .wrapping_add(i as u64)
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         let mut rng = StdRng::seed_from_u64(case_seed);
 
         let description = format!("diff_verify_case_{}_seed_{}", i, case_seed);
@@ -392,9 +393,9 @@ fn generate_cases(base_seed: u64, count: u32) -> Vec<OracleCase> {
         let final_price: u128 = rng.gen_range(100_0000..=50_000_0000);
         let fee_bps: Option<u32> = match rng.gen_range(0u32..=3) {
             0 => None,
-            1 => Some(1),      // 0.01%
-            2 => Some(250),    // 2.5%
-            3 => Some(1_000),  // 10% max
+            1 => Some(1),     // 0.01%
+            2 => Some(250),   // 2.5%
+            3 => Some(1_000), // 10% max
             _ => unreachable!(),
         };
 
@@ -514,12 +515,7 @@ fn assert_stroop_eq(
 }
 
 /// Assert two `u32` values are equal.
-fn assert_u32_eq(
-    got: u32,
-    expected: u32,
-    label: &str,
-    case: &OracleCase,
-) -> Result<(), String> {
+fn assert_u32_eq(got: u32, expected: u32, label: &str, case: &OracleCase) -> Result<(), String> {
     if got != expected {
         Err(format!(
             "\n\
@@ -556,8 +552,10 @@ fn execute_case(case: &OracleCase) -> Result<(), String> {
     let c_dir = classify_price_direction(case.start_price, case.final_price);
     let r_dir = ref_classify_direction(case.start_price, case.final_price);
     assert_stroop_eq(
-        c_dir as i128, r_dir as i128,
-        "classify_price_direction", case,
+        c_dir as i128,
+        r_dir as i128,
+        "classify_price_direction",
+        case,
     )?;
 
     // ── 5b: One-sided pool ──
@@ -576,7 +574,11 @@ fn execute_case(case: &OracleCase) -> Result<(), String> {
                SEED={seed} cargo test --package xelma-contract --lib \\\n  \
                tests::diff_verify -- --nocapture\n\
              ══════════════════════════════════════════════════════════════",
-            case.description, case.seed, c_1sided, r_1sided, seed = case.seed,
+            case.description,
+            case.seed,
+            c_1sided,
+            r_1sided,
+            seed = case.seed,
         ));
     }
 
@@ -637,7 +639,10 @@ fn execute_case(case: &OracleCase) -> Result<(), String> {
              Got:     {}\n\
              Expected:{}\n\
              ══════════════════════════════════════════════════════════════",
-            case.description, case.seed, c_updown.len(), r_updown.len()
+            case.description,
+            case.seed,
+            c_updown.len(),
+            r_updown.len()
         ));
     }
 
@@ -645,8 +650,10 @@ fn execute_case(case: &OracleCase) -> Result<(), String> {
         c_updown.iter().zip(r_updown.iter()).enumerate()
     {
         assert_stroop_eq(
-            contract_e.payout, ref_payout,
-            &format!("updown_payouts[{}].payout", i), case,
+            contract_e.payout,
+            ref_payout,
+            &format!("updown_payouts[{}].payout", i),
+            case,
         )?;
         if contract_e.is_winner != ref_winner {
             return Err(format!(
@@ -694,15 +701,14 @@ fn execute_case(case: &OracleCase) -> Result<(), String> {
         case.final_price,
         case.scoring_policy.clone(),
     );
-    let (r_winner_indices, _, r_total_pot) = ref_find_precision_winners(
-        &contract_entries,
-        case.final_price,
-        &case.scoring_policy,
-    );
+    let (r_winner_indices, _, r_total_pot) =
+        ref_find_precision_winners(&contract_entries, case.final_price, &case.scoring_policy);
 
     assert_stroop_eq(
-        c_winners.total_pot as i128, r_total_pot as i128,
-        "precision_winners.total_pot", case,
+        c_winners.total_pot as i128,
+        r_total_pot as i128,
+        "precision_winners.total_pot",
+        case,
     )?;
     if c_winners.winner_indices != r_winner_indices {
         return Err(format!(
@@ -715,9 +721,12 @@ fn execute_case(case: &OracleCase) -> Result<(), String> {
              Expected:{:?}\n\
              Score mode: {:?}, confidence_band: {:?}\n\
              ══════════════════════════════════════════════════════════════",
-            case.description, case.seed,
-            c_winners.winner_indices, r_winner_indices,
-            case.scoring_policy.mode, case.scoring_policy.confidence_band,
+            case.description,
+            case.seed,
+            c_winners.winner_indices,
+            r_winner_indices,
+            case.scoring_policy.mode,
+            case.scoring_policy.confidence_band,
         ));
     }
 
@@ -749,7 +758,10 @@ fn execute_case(case: &OracleCase) -> Result<(), String> {
              Got:     {}\n\
              Expected:{}\n\
              ══════════════════════════════════════════════════════════════",
-            case.description, case.seed, c_precision.len(), r_precision.len()
+            case.description,
+            case.seed,
+            c_precision.len(),
+            r_precision.len()
         ));
     }
 
@@ -757,8 +769,10 @@ fn execute_case(case: &OracleCase) -> Result<(), String> {
         c_precision.iter().zip(r_precision.iter()).enumerate()
     {
         assert_stroop_eq(
-            contract_e.payout, ref_payout,
-            &format!("precision_payouts[{}].payout", i), case,
+            contract_e.payout,
+            ref_payout,
+            &format!("precision_payouts[{}].payout", i),
+            case,
         )?;
         if contract_e.is_winner != ref_winner {
             return Err(format!(
@@ -948,10 +962,7 @@ fn fixed_regression_cases() -> Vec<OracleCase> {
             pool_down: 0,
             fee_bps: Some(500),
             positions: vec![],
-            precision_entries: vec![
-                (10_000_000, 100, false),
-                (20_000_000, 200, false),
-            ],
+            precision_entries: vec![(10_000_000, 100, false), (20_000_000, 200, false)],
             scoring_policy: scoring_default.clone(),
             payout_policy: PrecisionPayoutPolicy::Equal,
             deviation_reference: 10_000_000,
@@ -966,9 +977,9 @@ fn fixed_regression_cases() -> Vec<OracleCase> {
             fee_bps: Some(200),
             positions: vec![],
             precision_entries: vec![
-                (10_000_000, 50, true),   // revealed, very close
-                (10_010_000, 30, true),   // revealed, farther
-                (15_000_000, 20, false),  // unrevealed — forfeit
+                (10_000_000, 50, true),  // revealed, very close
+                (10_010_000, 30, true),  // revealed, farther
+                (15_000_000, 20, false), // unrevealed — forfeit
             ],
             scoring_policy: scoring_default.clone(),
             payout_policy: PrecisionPayoutPolicy::Equal,
@@ -983,10 +994,7 @@ fn fixed_regression_cases() -> Vec<OracleCase> {
             pool_down: 0,
             fee_bps: None,
             positions: vec![],
-            precision_entries: vec![
-                (10_000_000, 30, true),
-                (10_000_000, 70, true),
-            ],
+            precision_entries: vec![(10_000_000, 30, true), (10_000_000, 70, true)],
             scoring_policy: scoring_default.clone(),
             payout_policy: PrecisionPayoutPolicy::StakeWeighted,
             deviation_reference: 10_000_000,
@@ -1001,9 +1009,9 @@ fn fixed_regression_cases() -> Vec<OracleCase> {
             fee_bps: Some(100),
             positions: vec![],
             precision_entries: vec![
-                (10_040_000, 100, true),  // score = 10000 * 10000/10050000 = 995
-                (10_060_000, 200, true),  // score = 10000 * 10000/10050000 = 995
-                (11_000_000, 50, true),   // score much higher — loses
+                (10_040_000, 100, true), // score = 10000 * 10000/10050000 = 995
+                (10_060_000, 200, true), // score = 10000 * 10000/10050000 = 995
+                (11_000_000, 50, true),  // score much higher — loses
             ],
             scoring_policy: PrecisionScoringPolicy {
                 mode: PrecisionScoringMode::RelativeDistance,
@@ -1022,9 +1030,9 @@ fn fixed_regression_cases() -> Vec<OracleCase> {
             fee_bps: None,
             positions: vec![],
             precision_entries: vec![
-                (10_000_000, 100, true),  // diff 0
-                (10_000_100, 200, true),  // diff 100
-                (10_000_050, 150, true),  // diff 50
+                (10_000_000, 100, true), // diff 0
+                (10_000_100, 200, true), // diff 100
+                (10_000_050, 150, true), // diff 50
             ],
             scoring_policy: PrecisionScoringPolicy {
                 mode: PrecisionScoringMode::AbsoluteDistance,
@@ -1174,8 +1182,9 @@ fn differential_verify_fuzz() {
                 );
                 let minimised = minimise_case(case);
                 let mini_diag = match execute_case(&minimised) {
-                    Ok(()) => "  (minimised case no longer reproduces — original may be flaky)",
-                    Err(d) => d.as_str(),
+                    Ok(()) => "  (minimised case no longer reproduces — original may be flaky)"
+                        .to_string(),
+                    Err(d) => d,
                 };
                 failures.push(format!(
                     "Case {} (seed={}):\n{}\nMinimised: {}",
