@@ -1500,6 +1500,8 @@ export class Client extends ContractClient {
         void_round: this.txFromJSON<Result<void>>,
         finalize_round: this.txFromJSON<Result<void>>,
         get_one_sided_policy: this.txFromJSON<Option<u32>>,
-        get_market_snapshot: this.txFromJSON<Option<RoundPoolStats>>
+        get_market_snapshot: this.txFromJSON<Option<RoundPoolStats>>,
+        set_fee_model: this.txFromJSON<Result<void>>,
+        get_fee_model: this.txFromJSON<FeeModel>
   }
 }
