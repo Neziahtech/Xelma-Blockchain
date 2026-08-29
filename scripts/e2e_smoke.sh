@@ -183,9 +183,22 @@ step "Deploying contract"
 # upgrade has necessarily finished applying, which can make this first
 # on-chain write fail with a transient `Budget/ExceededLimit` error. Retry
 # this specific step a few times rather than chasing longer fixed sleeps.
+#
+# --instruction-leeway: the quickstart container's default instruction budget
+# may be too tight for large WASM uploads (≈190 KB). A generous leeway lets
+# the simulation succeed and auto-correct the resource fee.
+# --resource-fee: hard floor so the fee is never below 10 XLM even if the
+# simulation underestimates.
+DEPLOY_RESOURCE_FEE=100_000_000  # 10 XLM in stroops
 CONTRACT_ID=""
 for attempt in $(seq 1 5); do
-  if CONTRACT_ID="$(stellar contract deploy --wasm "$WASM_PATH" --source "$ADMIN_ID" --network "$NETWORK" -- | tail -n1)" \
+  if CONTRACT_ID="$(stellar contract deploy \
+        --wasm "$WASM_PATH" \
+        --source "$ADMIN_ID" \
+        --network "$NETWORK" \
+        --resource-fee "$DEPLOY_RESOURCE_FEE" \
+        --instruction-leeway 200_000_000 \
+        -- | tail -n1)" \
       && [[ "$CONTRACT_ID" =~ ^C[A-Z0-9]{55}$ ]]; then
     break
   fi
