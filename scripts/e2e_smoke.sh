@@ -185,17 +185,11 @@ step "Deploying contract"
 # this specific step a few times rather than chasing longer fixed sleeps.
 #
 # Split deploy into upload + deploy (two transactions) so the large WASM
-# upload (≈190 KB) doesn't share its instruction budget with the contract
-# instantiation.  Each step gets its own resource budget.
+# upload (≈160–190 KB) doesn't share its instruction budget with the
+# contract instantiation.  Each step gets its own resource budget.
 CONTRACT_ID=""
-WASM_HASH=""
 for attempt in $(seq 1 5); do
-  WASM_HASH="$(stellar contract upload \
-        --wasm "$WASM_PATH" \
-        --source "$ADMIN_ID" \
-        --network "$NETWORK" \
-        --resource-fee 50000000 \
-        -- 2>/dev/null | tail -n1)"
+  WASM_HASH="$(stellar contract upload --wasm "$WASM_PATH" --source "$ADMIN_ID" --network "$NETWORK" --resource-fee 50000000 2>/dev/null | tail -n1)" || WASM_HASH=""
   if [[ -z "$WASM_HASH" || ! "$WASM_HASH" =~ ^[a-f0-9]{64}$ ]]; then
     echo "Upload attempt $attempt failed (got: '$WASM_HASH'), retrying in 5s..."
     WASM_HASH=""
@@ -203,12 +197,7 @@ for attempt in $(seq 1 5); do
     continue
   fi
   echo "WASM hash: $WASM_HASH"
-  CONTRACT_ID="$(stellar contract deploy \
-        --wasm-hash "$WASM_HASH" \
-        --source "$ADMIN_ID" \
-        --network "$NETWORK" \
-        --resource-fee 10000000 \
-        -- 2>/dev/null | tail -n1)"
+  CONTRACT_ID="$(stellar contract deploy --wasm-hash "$WASM_HASH" --source "$ADMIN_ID" --network "$NETWORK" --resource-fee 10000000 2>/dev/null | tail -n1)" || CONTRACT_ID=""
   if [[ "$CONTRACT_ID" =~ ^C[A-Z0-9]{55}$ ]]; then
     break
   fi
