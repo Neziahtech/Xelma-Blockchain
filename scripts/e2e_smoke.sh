@@ -184,26 +184,37 @@ step "Deploying contract"
 # on-chain write fail with a transient `Budget/ExceededLimit` error. Retry
 # this specific step a few times rather than chasing longer fixed sleeps.
 #
-# --instruction-leeway: the quickstart container's default instruction budget
-# may be too tight for large WASM uploads (≈190 KB). A generous leeway lets
-# the simulation succeed and auto-correct the resource fee.
-# --resource-fee: hard floor so the fee is never below 10 XLM even if the
-# simulation underestimates.
-DEPLOY_RESOURCE_FEE=100_000_000  # 10 XLM in stroops
+# Split deploy into upload + deploy (two transactions) so the large WASM
+# upload (≈190 KB) doesn't share its instruction budget with the contract
+# instantiation.  Each step gets its own resource budget.
 CONTRACT_ID=""
+WASM_HASH=""
 for attempt in $(seq 1 5); do
-  if CONTRACT_ID="$(stellar contract deploy \
+  WASM_HASH="$(stellar contract upload \
         --wasm "$WASM_PATH" \
         --source "$ADMIN_ID" \
         --network "$NETWORK" \
-        --resource-fee "$DEPLOY_RESOURCE_FEE" \
-        --instruction-leeway 200_000_000 \
-        -- | tail -n1)" \
-      && [[ "$CONTRACT_ID" =~ ^C[A-Z0-9]{55}$ ]]; then
+        --resource-fee 50000000 \
+        -- 2>/dev/null | tail -n1)"
+  if [[ -z "$WASM_HASH" || ! "$WASM_HASH" =~ ^[a-f0-9]{64}$ ]]; then
+    echo "Upload attempt $attempt failed (got: '$WASM_HASH'), retrying in 5s..."
+    WASM_HASH=""
+    sleep 5
+    continue
+  fi
+  echo "WASM hash: $WASM_HASH"
+  CONTRACT_ID="$(stellar contract deploy \
+        --wasm-hash "$WASM_HASH" \
+        --source "$ADMIN_ID" \
+        --network "$NETWORK" \
+        --resource-fee 10000000 \
+        -- 2>/dev/null | tail -n1)"
+  if [[ "$CONTRACT_ID" =~ ^C[A-Z0-9]{55}$ ]]; then
     break
   fi
   echo "Deploy attempt $attempt failed (got: '$CONTRACT_ID'), retrying in 5s..."
   CONTRACT_ID=""
+  WASM_HASH=""
   sleep 5
 done
 if [[ -z "$CONTRACT_ID" ]]; then
