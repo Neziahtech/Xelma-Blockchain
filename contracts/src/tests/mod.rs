@@ -42,6 +42,7 @@ mod resolution;
 mod rotation;
 mod security;
 mod settlement_math_vectors;
+mod diff_verify;
 mod status;
 mod storage_benchmarks;
 mod ttl_tests;
