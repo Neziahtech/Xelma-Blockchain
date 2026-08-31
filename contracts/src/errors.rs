@@ -137,4 +137,10 @@ pub enum ContractError {
     /// sequence would make a payload signed for the earlier round valid for
     /// the later one. Retry once the ledger has advanced.
     RoundStartLedgerReused = 93,
+    /// Insurance split bps exceeds the allowed maximum (Issue #367).
+    InsuranceInvalidSplit = 94,
+    /// Insurance fund has insufficient balance for the requested payout (Issue #367).
+    InsuranceInsufficientFund = 95,
+    /// Insurance coverage event is not in the eligible whitelist (Issue #367).
+    InsuranceEventNotEligible = 96,
 }

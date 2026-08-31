@@ -122,7 +122,7 @@ fn _clear_dispute_round_storage(env: &Env, round_id: u64, participants: &Vec<Add
 }
 
 /// Cancels the active round and deterministically refunds all participant stakes.
-pub fn cancel_round(env: Env, _reason: u32) -> Result<(), ContractError> {
+pub fn cancel_round(env: Env, reason: u32) -> Result<(), ContractError> {
     _require_supported_schema(&env)?;
     let admin: Address = env
         .storage()
@@ -154,12 +154,21 @@ pub fn cancel_round(env: Env, _reason: u32) -> Result<(), ContractError> {
         .get(&DataKeyScoped::RoundParticipants(round_id))
         .unwrap_or(Vec::new(&env));
 
+    // ─── Insurance coverage (Issue #367) ──────────────────────────────────
+    // Collect per-participant stakes for insurance coverage calculation.
+    // Coverage is distributed AFTER refunds as an additional bonus.
+    let eligible = crate::insurance::is_coverage_eligible(&env, reason);
+    let mut participant_stakes: Vec<i128> = Vec::new(&env);
+    let mut total_stake: i128 = 0;
+
     match round.mode {
         RoundMode::UpDown => {
             for i in 0..participants.len() {
                 if let Some(user) = participants.get(i) {
                     let pos_key = DataKeyScoped::Position(round_id, user.clone());
                     if let Some(pos) = env.storage().persistent().get::<_, UserPosition>(&pos_key) {
+                        participant_stakes.push_back(pos.amount);
+                        total_stake = total_stake.checked_add(pos.amount).unwrap_or(total_stake);
                         _accumulate_pending(&env, user.clone(), pos.amount)?;
                         let prediction_side = match pos.side {
                             BetSide::Up => 0,
@@ -201,6 +210,9 @@ pub fn cancel_round(env: Env, _reason: u32) -> Result<(), ContractError> {
                         refund_amount = commit.amount;
                     }
 
+                    participant_stakes.push_back(refund_amount);
+                    total_stake = total_stake.checked_add(refund_amount).unwrap_or(total_stake);
+
                     if refund_amount > 0 {
                         _accumulate_pending(&env, user.clone(), refund_amount)?;
                     }
@@ -215,6 +227,43 @@ pub fn cancel_round(env: Env, _reason: u32) -> Result<(), ContractError> {
                         refund_amount,
                         UserOutcomeType::Void,
                     );
+                }
+            }
+        }
+    }
+
+    // ─── Insurance coverage payout (Issue #367) ──────────────────────────
+    // If the cancel reason is in the eligible-event whitelist and the
+    // insurance fund has balance, distribute coverage as additional
+    // pending winnings to each participant.
+    if eligible && !participant_stakes.is_empty() {
+        let mut total_coverage: i128 = 0;
+        for i in 0..participant_stakes.len() {
+            if let Some(stake) = participant_stakes.get(i) {
+                let cov = crate::insurance::calculate_coverage_amount(&env, stake)?;
+                total_coverage = payout_add(total_coverage, cov)?;
+            }
+        }
+        if total_coverage > 0 {
+            let distributed = crate::insurance::deduct_insurance_coverage(&env, round_id, total_coverage)?;
+            // Distribute coverage proportionally to participants
+            if distributed > 0 && total_stake > 0 {
+                for i in 0..participants.len() {
+                    if let Some(user) = participants.get(i) {
+                        let stake = participant_stakes.get(i).unwrap_or(0);
+                        let coverage = if stake > 0 {
+                            distributed
+                                .checked_mul(stake)
+                                .ok_or(ContractError::Overflow)?
+                                .checked_div(total_stake)
+                                .ok_or(ContractError::Overflow)?
+                        } else {
+                            0
+                        };
+                        if coverage > 0 {
+                            _accumulate_pending(&env, user, coverage)?;
+                        }
+                    }
                 }
             }
         }
