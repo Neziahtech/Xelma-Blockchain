@@ -108,6 +108,30 @@ pub fn create_round(env: Env, start_price: u128, mode: Option<u32>) -> Result<()
         .get(&DataKeyCore::RunWindowLedgers)
         .unwrap_or(DEFAULT_RUN_WINDOW_LEDGERS);
 
+    // Oracle payloads bind to `Round.start_ledger` (`OraclePayload.round_id`),
+    // so a ledger sequence may back at most one round. A round created,
+    // cancelled, and replaced within a single ledger would otherwise share a
+    // `start_ledger` with its predecessor, making a payload signed for the
+    // earlier round valid for the later one. The per-round nonce guard does not
+    // cover this: consumed nonces are keyed by the monotonic `Round.round_id`,
+    // which differs between the two rounds. Such a replacement round could not
+    // be settled unambiguously at all, so it is refused at creation instead.
+    // Retry once the ledger has advanced.
+    let start_ledger = env.ledger().sequence();
+    if env
+        .storage()
+        .persistent()
+        .has(&DataKeyScoped::RoundStartLedger(start_ledger))
+    {
+        _emit_action_rejected(
+            &env,
+            &admin,
+            symbol_short!("create"),
+            ContractError::RoundStartLedgerReused,
+        );
+        return Err(ContractError::RoundStartLedgerReused);
+    }
+
     // Generate unique round ID
     _extend_persistent_ttl(&env, &DataKeyCore::LastRoundId);
     let last_round_id: u64 = env
@@ -123,7 +147,6 @@ pub fn create_round(env: Env, start_price: u128, mode: Option<u32>) -> Result<()
         .set(&DataKeyCore::LastRoundId, &round_id);
     _extend_persistent_ttl(&env, &DataKeyCore::LastRoundId);
 
-    let start_ledger = env.ledger().sequence();
     let bet_end_ledger = start_ledger
         .checked_add(bet_ledgers)
         .ok_or(ContractError::Overflow)?;
@@ -149,6 +172,11 @@ pub fn create_round(env: Env, start_price: u128, mode: Option<u32>) -> Result<()
         .persistent()
         .set(&DataKeyCore::ActiveRound, &round);
     _extend_persistent_ttl(&env, &DataKeyCore::ActiveRound);
+
+    // Claim this ledger sequence for this round, so no later round can reuse it.
+    let start_ledger_key = DataKeyScoped::RoundStartLedger(start_ledger);
+    env.storage().persistent().set(&start_ledger_key, &round_id);
+    _extend_persistent_ttl(&env, &start_ledger_key);
 
     #[allow(deprecated)]
     env.events().publish(
@@ -486,7 +514,7 @@ pub fn commit_prediction(
     // Reject clearly invalid commitment placeholders early (before balance
     // reads / deductions) so griefing commits cannot lock liquidity.
     if is_zero_bytes32(&env, &hash) {
-        return Err(ContractError::InvalidPrice);
+        return Err(ContractError::InvalidCommitment);
     }
 
     if amount <= 0 {
@@ -614,7 +642,7 @@ pub fn reveal_prediction(
     // Enforce salt entropy before any storage reads so malformed reveals fail
     // fast with an explicit error (not HashMismatch after a wasted lookup).
     if !salt_has_minimum_entropy(&salt) {
-        return Err(ContractError::InvalidPrice);
+        return Err(ContractError::InvalidSalt);
     }
 
     // Single read of the active round
