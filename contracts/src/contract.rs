@@ -125,12 +125,13 @@ impl VirtualTokenContract {
     }
 
     /// Returns paginated archived participation history for a user (newest first).
+    /// Rejects if `limit` exceeds `MAX_PAGE_SIZE` (100).
     pub fn get_user_archive_history(
         env: Env,
         user: Address,
         offset: u32,
         limit: u32,
-    ) -> Vec<ArchivedRoundSummary> {
+    ) -> Result<Vec<ArchivedRoundSummary>, ContractError> {
         queries::get_user_archive_history(env, user, offset, limit)
     }
 
@@ -1203,20 +1204,22 @@ impl VirtualTokenContract {
     // ─── Leaderboards (lifetime + seasons) ──────────────────────────────────
 
     /// Cursor-based page of the global leaderboard ordered by total wins descending.
+    /// Rejects if `limit` exceeds `MAX_PAGE_SIZE` (100).
     pub fn get_leaderboard_by_wins(
         env: Env,
         cursor: Option<Address>,
         limit: u32,
-    ) -> (Vec<LeaderboardEntry>, Option<Address>) {
+    ) -> Result<(Vec<LeaderboardEntry>, Option<Address>), ContractError> {
         queries::get_leaderboard_by_wins(env, cursor, limit)
     }
 
     /// Cursor-based page of the global leaderboard ordered by best streak descending.
+    /// Rejects if `limit` exceeds `MAX_PAGE_SIZE` (100).
     pub fn get_leaderboard_by_streak(
         env: Env,
         cursor: Option<Address>,
         limit: u32,
-    ) -> (Vec<LeaderboardEntry>, Option<Address>) {
+    ) -> Result<(Vec<LeaderboardEntry>, Option<Address>), ContractError> {
         queries::get_leaderboard_by_streak(env, cursor, limit)
     }
     // ─── Leaderboards (lifetime + seasons) ──────────────────────────────────

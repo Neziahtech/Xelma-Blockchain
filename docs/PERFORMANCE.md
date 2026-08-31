@@ -50,6 +50,33 @@ workflow run's Artifacts section, not just the truncated job log. When you
 touch a benchmark-sensitive path, download that artifact from your PR's CI
 run and paste the relevant rows into this file's table in the same change.
 
+## Pagination query limits (Issue #430)
+
+To prevent adversarial over-limit requests from bypassing CPU/memory budgets,
+paginated query functions enforce strict pagination limits:
+
+| Function | Max page size | Error on exceed |
+|---|---:|---|
+| `get_precision_predictions_cursor` | 100 | `PageSizeExceeded` (94) |
+| `get_updown_positions_cursor` | 100 | `PageSizeExceeded` (94) |
+| `get_leaderboard_by_wins` | 100 | `PageSizeExceeded` (94) |
+| `get_leaderboard_by_streak` | 100 | `PageSizeExceeded` (94) |
+| `get_user_archive_history` | 100 | `PageSizeExceeded` (94) |
+
+**Key behaviors**:
+- Requests with `limit == 0` or `limit > 100` are rejected with error code 94.
+- The limit is **not** clamped; over-limit requests fail fast.
+- Valid limits are `1..=100` (inclusive).
+- Cursor-based functions (leaderboard, predictions, positions) return `(Vec<T>, Option<Address>)`.
+- When results are exhausted, `next_cursor` is `None` and the page is empty.
+
+**Gas guard rationale**:
+The 100-item limit ensures that even under worst-case data density (each item fetches
+from persistent storage), query CPU and memory consumption remains bounded within
+Soroban's per-transaction budget. Rejecting over-limit requests prevents callers from
+accidentally or maliciously requesting unbounded batches that could fail during
+settlement or cause timeouts.
+
 ## Updating a cost-benchmark ceiling
 
 The `*_CPU_MAX`/`*_MEM_MAX` constants in `contracts/src/tests/cost_benchmarks.rs`
