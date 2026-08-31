@@ -5,6 +5,9 @@ and focused commands. It is designed to help new and experienced contributors
 navigate the modular layout and ship reviewable PRs that measurably improve
 protocol safety, correctness, or operator/demo readiness on Stellar.
 
+- **CEI Audit & Security Reference:** [docs/CEI_AUDIT.md](CEI_AUDIT.md)
+- **Oracle Committee Architecture:** [docs/ORACLE_COMMITTEE.md](ORACLE_COMMITTEE.md)
+
 ---
 
 ## Quick Reference — Repository Layout
