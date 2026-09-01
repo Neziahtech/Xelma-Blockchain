@@ -31,6 +31,8 @@ mod queries;
 mod settlement;
 mod storage;
 mod math_common;
+pub mod collateral;
+pub mod oracle_committee;
 mod settlement_math;
 mod types;
 
