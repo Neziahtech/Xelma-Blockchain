@@ -37,6 +37,7 @@ mod min_bet;
 mod mode_tests;
 mod one_sided_settlement;
 mod overflow_tests;
+mod precision_payout_overflow;
 mod pause;
 mod pause_policy_matrix;
 mod pending_winnings_expiry;
@@ -52,3 +53,7 @@ mod status;
 mod storage_benchmarks;
 mod ttl_tests;
 mod windows;
+mod archive_participation;
+mod insurance;
+mod precision_scoring;
+
