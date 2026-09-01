@@ -1322,8 +1322,7 @@ fn _complete_settlement(
     );
 
     _clear_dispute_round_storage(env, round_id, &participants);
-    if env
-        .storage()
+
     // Mode-scoped position cleanup (eliminates redundant storage delete lookups)
     match round.mode {
         RoundMode::UpDown => {
@@ -1355,7 +1354,11 @@ fn _complete_settlement(
     env.storage().persistent().remove(&DataKeyCore::ActiveRound);
     env.storage().persistent().remove(&DataKeyCore::Positions);
     env.storage().persistent().remove(&DataKeyCore::UpDownPositions);
-    env.storage()
+    // A merge left this guarded re-remove of the active round split across
+    // two fragments (the `if` keyword and its condition were separated from
+    // the body). Rejoined here so the file parses again.
+    if env
+        .storage()
         .persistent()
         .get::<_, Round>(&DataKeyCore::ActiveRound)
         .map(|active| active.round_id == round_id)
@@ -1943,9 +1946,10 @@ pub fn _resolve_precision_mode(
                 .unwrap_or(0u128);
             let revealed = pred_opt.is_some();
 
-            total_pot = total_pot
-                .checked_add(amount)
-                .ok_or(ContractError::Overflow)?;
+            // Precision pot accumulation is payout arithmetic: an overflow here
+            // (Issue #405) must surface as `PayoutOverflow`, not a generic
+            // `Overflow`, so clients can unambiguously detect a payout failure.
+            total_pot = payout_add(total_pot, amount)?;
             participant_amounts.push(amount);
             participant_prices.push(cached_price);
             participant_revealed.push(revealed);
@@ -1995,9 +1999,9 @@ pub fn _resolve_precision_mode(
         let mut winner_stakes: i128 = 0;
         for i in 0..winners.len() {
             if let Some(w) = winners.get(i) {
-                winner_stakes = winner_stakes
-                    .checked_add(w.amount)
-                    .ok_or(ContractError::Overflow)?;
+                // Payout arithmetic (Issue #405): overflow must map to
+                // `PayoutOverflow`.
+                winner_stakes = payout_add(winner_stakes, w.amount)?;
             }
         }
         let (payout_pool, fee) =
@@ -2158,9 +2162,9 @@ pub fn _resolve_precision_legacy(
         let mut winner_stakes: i128 = 0;
         for i in 0..winners.len() {
             if let Some(w) = winners.get(i) {
-                winner_stakes = winner_stakes
-                    .checked_add(w.amount)
-                    .ok_or(ContractError::Overflow)?;
+                // Payout arithmetic (Issue #405): overflow must map to
+                // `PayoutOverflow`.
+                winner_stakes = payout_add(winner_stakes, w.amount)?;
             }
         }
         let (payout_pool, fee) =
