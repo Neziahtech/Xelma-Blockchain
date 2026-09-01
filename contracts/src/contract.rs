@@ -8,6 +8,7 @@ use soroban_sdk::{contract, contractimpl, symbol_short, Address, BytesN, Env, Ma
 use crate::access_control;
 use crate::errors::ContractError;
 use crate::governance;
+use crate::insurance;
 use crate::types::{
     ArchivedRoundSummary, AccessState, BetSide, ConfigChangeKind, ConfigChangePayload, DataKeyCore,
     DataKeyScoped, DeviationReferenceMode, LeaderboardEntry, MultiFeedPayload, OneSidedPolicy,
@@ -1199,6 +1200,59 @@ impl VirtualTokenContract {
     /// Returns the configured fee incidence model, defaulting to `FeeOnPot`.
     pub fn get_fee_model(env: Env) -> FeeModel {
         config::get_fee_model(env)
+    }
+
+    // ─── Insurance / backstop fund (Issue #367) ────────────────────────────
+
+    /// Sets the insurance accrual split: how many basis points of each
+    /// protocol fee are directed to the insurance fund (admin only).
+    pub fn set_insurance_split_bps(env: Env, bps: u32) -> Result<(), ContractError> {
+        insurance::set_insurance_split_bps(env, bps)
+    }
+
+    /// Returns the configured insurance split in basis points.
+    pub fn get_insurance_split_bps(env: Env) -> u32 {
+        insurance::get_insurance_split_bps(&env)
+    }
+
+    /// Sets the insurance coverage payout rate in basis points (admin only).
+    pub fn set_insurance_coverage_bps(env: Env, bps: u32) -> Result<(), ContractError> {
+        insurance::set_insurance_coverage_bps(env, bps)
+    }
+
+    /// Returns the configured insurance coverage payout rate.
+    pub fn get_insurance_coverage_bps(env: Env) -> u32 {
+        insurance::get_insurance_coverage_bps(&env)
+    }
+
+    /// Sets the whitelist of eligible insurance event types (admin only).
+    pub fn set_insurance_eligible_events(env: Env, events: Vec<u32>) -> Result<(), ContractError> {
+        insurance::set_insurance_eligible_events(env, events)
+    }
+
+    /// Returns the list of eligible insurance event type discriminants.
+    pub fn get_insurance_eligible_events(env: Env) -> Vec<u32> {
+        insurance::get_insurance_eligible_events(&env)
+    }
+
+    /// Returns the current insurance fund balance.
+    pub fn get_insurance_fund_balance(env: Env) -> i128 {
+        insurance::get_insurance_fund_balance(&env)
+    }
+
+    /// Top-ups the insurance fund from the caller's vXLM balance (admin only).
+    pub fn top_up_insurance_fund(env: Env, amount: i128) -> Result<(), ContractError> {
+        insurance::top_up_insurance_fund(env, amount)
+    }
+
+    /// Withdraws from the insurance fund to a recipient (admin only,
+    /// requires governance dual-control when approver is set).
+    pub fn withdraw_insurance_fund(
+        env: Env,
+        recipient: Address,
+        amount: i128,
+    ) -> Result<i128, ContractError> {
+        insurance::withdraw_insurance_fund(env, recipient, amount)
     }
 
     // ─── Leaderboards (lifetime + seasons) ──────────────────────────────────
