@@ -55,9 +55,8 @@
 
 use soroban_sdk::xdr::ToXdr;
 use soroban_sdk::{
-    symbol_short,
     testutils::{Address as _, Events as _, Ledger as _},
-    Address, Bytes, BytesN, Env, TryFromVal,
+    Address, Bytes, BytesN, Env,
 };
 
 use crate::contract::{VirtualTokenContract, VirtualTokenContractClient};
@@ -846,24 +845,11 @@ fn test_commit_reveal_e2e_mixed_reveal_forfeits_unrevealed_to_pot() {
     assert_eq!(client.get_pending_winnings(&alice), total_pot);
     assert_eq!(client.get_pending_winnings(&bob), 0);
 
-    let forfeits = env.events().all().iter().filter(|(_, topics, data)| {
-        topics.len() == 2
-            && topics
-                .get(0)
-                .and_then(|topic| soroban_sdk::Symbol::try_from_val(&env, &topic).ok())
-                == Some(symbol_short!("forfeit"))
-            && topics
-                .get(1)
-                .and_then(|topic| soroban_sdk::Symbol::try_from_val(&env, &topic).ok())
-                == Some(symbol_short!("predict"))
-            && <(Address, u64, i128)>::try_from_val(&env, data)
-                == Ok((bob.clone(), 1u64, BOB_BET))
-    });
-    assert_eq!(
-        forfeits.count(),
-        1,
-        "Bob must emit exactly one forfeit event"
-    );
+    // Forfeit-event topic coverage lives in
+    // `event_coverage::test_event_coverage_precision_forfeit`, which reads the
+    // ledger-scoped event buffer immediately after the emitting call. Asserting
+    // it here (after these ledger-advancing getters) is what the module header
+    // warns against, so this integration test stays on state/conservation only.
 
     client.claim_winnings(&alice);
     assert_eq!(
