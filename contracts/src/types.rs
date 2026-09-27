@@ -856,6 +856,11 @@ pub struct SeasonArchive {
 pub struct MultiFeedPayload {
     pub prices: Vec<u128>,
     pub sources: Vec<u32>,
+    /// Binds this payload to exactly one round.
+    ///
+    /// Same rule as [`OraclePayload::round_id`]: must equal the active round's
+    /// **`Round.start_ledger`**, NOT the monotonic `Round.round_id`. See
+    /// `PROTOCOL_SPEC.md` invariant I10.
     pub round_id: u32,
     pub nonce: u64,
     pub network_id: BytesN<32>,

@@ -4,9 +4,12 @@
 use super::config_helpers::{apply_oracle_max_deviation_bps, apply_oracle_stale_threshold};
 use crate::contract::{VirtualTokenContract, VirtualTokenContractClient};
 use crate::errors::ContractError;
-use crate::types::{DataKeyCore, DataKeyScoped, HbGateConfig, HbGateKey, OraclePayload};
+use crate::types::{
+    DataKeyCore, DataKeyScoped, HbGateConfig, HbGateKey, MultiFeedPayload, OraclePayload,
+    OracleQuorumConfig,
+};
 use soroban_sdk::{
-    symbol_short,
+    symbol_short, vec,
     testutils::{Address as _, Events, Ledger as _},
     Address, BytesN, Env, IntoVal, TryIntoVal,
 };
@@ -77,6 +80,115 @@ fn test_resolve_round_invalid_round_id() {
 
     let result = client.try_resolve_round(&payload);
     assert_eq!(result, Err(Ok(ContractError::InvalidOracleRound)));
+}
+
+/// The single most common operator misconfiguration (see
+/// `docs/ORACLE_OPERATOR_RUNBOOK.md`): submitting the monotonic
+/// `Round.round_id` instead of `Round.start_ledger`. Payloads bind to
+/// `start_ledger` (PROTOCOL_SPEC.md invariant I10), so the monotonic id must be
+/// rejected while the start-ledger value settles.
+#[test]
+fn test_resolve_round_rejects_monotonic_round_id() {
+    let env = Env::default();
+    let contract_id = env.register(VirtualTokenContract, ());
+    let client = VirtualTokenContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let oracle = Address::generate(&env);
+    env.mock_all_auths();
+
+    client.initialize(&admin, &oracle);
+    client.update_oracle_heartbeat(&0u32);
+    client.create_round(&1_0000000, &None);
+
+    let round = client.get_active_round().unwrap();
+    assert_ne!(
+        round.round_id,
+        round.start_ledger as u64,
+        "test must distinguish the two round identifiers"
+    );
+
+    env.ledger().with_mut(|li| {
+        li.sequence_number = 12;
+    });
+
+    // WRONG: the monotonic Round.round_id.
+    let payload = OraclePayload {
+        price: 1_5000000,
+        timestamp: env.ledger().timestamp(),
+        round_id: round.round_id as u32,
+        nonce: 1u64,
+        network_id: env.ledger().network_id(),
+        contract_addr: contract_id.clone(),
+        confidence: None,
+        attestation: None,
+    };
+    let result = client.try_resolve_round(&payload);
+    assert_eq!(result, Err(Ok(ContractError::InvalidOracleRound)));
+
+    // CORRECT: the round's start_ledger.
+    let payload = OraclePayload {
+        round_id: round.start_ledger,
+        ..payload
+    };
+    client.resolve_round(&payload);
+    assert_eq!(client.get_active_round(), None);
+}
+
+/// The multi-feed path enforces the same round binding: a payload whose
+/// `round_id` does not equal the active round's `start_ledger` is rejected
+/// with `InvalidOracleRound` before any aggregation or nonce consumption.
+#[test]
+fn test_resolve_round_multi_rejects_wrong_round_id() {
+    let env = Env::default();
+    let contract_id = env.register(VirtualTokenContract, ());
+    let client = VirtualTokenContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let oracle = Address::generate(&env);
+    env.mock_all_auths();
+
+    client.initialize(&admin, &oracle);
+    client.update_oracle_heartbeat(&0u32);
+    client.set_oracle_quorum_config(&Some(OracleQuorumConfig {
+        min_observations: 3,
+        quorum_threshold: 3,
+        outlier_threshold_bps: 500,
+    }));
+    client.create_round(&1_0000000, &None);
+
+    let round = client.get_active_round().unwrap();
+    assert_ne!(round.round_id, round.start_ledger as u64);
+
+    env.ledger().with_mut(|li| {
+        // Stay before `end_ledger` so the correctly-bound payload fails only on
+        // round timing (RoundNotEnded), isolating the binding check itself.
+        li.sequence_number = 6;
+    });
+
+    let now = env.ledger().timestamp();
+    let build = |round_id: u32| MultiFeedPayload {
+        prices: vec![&env, 1_5000000u128, 1_5000001u128, 1_5000002u128],
+        sources: vec![&env, 0u32, 1u32, 2u32],
+        round_id,
+        nonce: 1u64,
+        network_id: env.ledger().network_id(),
+        contract_addr: contract_id.clone(),
+        timestamp: now,
+    };
+
+    // Monotonic Round.round_id and an arbitrary foreign value both fail binding.
+    for wrong in [round.round_id as u32, 999] {
+        let result = client.try_resolve_round_multi(&build(wrong));
+        assert_eq!(result, Err(Ok(ContractError::InvalidOracleRound)));
+    }
+
+    // Rejection must not consume the nonce namespace for the real round.
+    assert_eq!(
+        client.try_resolve_round_multi(&build(round.start_ledger)),
+        Err(Ok(ContractError::RoundNotEnded)),
+        "correctly-bound payload must pass binding and fail only on round timing"
+    );
 }
 
 #[test]
